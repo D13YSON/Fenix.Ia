@@ -2,16 +2,17 @@
 
 const { google } = require('googleapis');
 const express = require('express');
-const { WebhookClient } = require('dialogflow-fulfillment');
+const { WebhookClient, Payload } = require('dialogflow-fulfillment');
 const path = require('path');
 const app = express();
 app.use(express.json());
 require('dotenv').config();
 
 const calendar = google.calendar('v3');
-const timeZone = 'America/Sao_Paulo';
-const timeZoneOffset = '-03:00';
 const appointment_type = 'Entrega';
+
+let nome = null;
+const calendarLink = `https://www.google.com/calendar/embed?src=${process.env.GOOGLE_CALENDAR_ID}&ctz=America/Sao_Paulo`;
 
 const serviceAccountAuth = new google.auth.JWT({
      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -33,30 +34,36 @@ class DialogflowWebhook {
 
      async makeAppointment() {
           try {
-               const dateTimeStart = new Date(Date.parse(this.agent.parameters.Data.split('T')[0] + 'T' + this.agent.parameters.Hora.split('T')[1].split('-')[0] + timeZoneOffset));
+               const dateParts = this.agent.parameters.Data.split('T'); 
+               const timeParts = this.agent.parameters.Hora.split('T')[1];
 
-               const dateTimeEnd = new Date(new Date(dateTimeStart).setHours(dateTimeStart.getHours() + 1));
+               const dateTimeEnd = new Date(`${dateParts[0]}T${timeParts.split('-')[0]}`);
 
-               const appointmentTimeString = dateTimeStart.toLocaleString(
-                    'pt-BR',
-                    {
-                         month: 'long',
-                         day: 'numeric',
-                         hour: 'numeric',
-                         timeZone: timeZone
-                    });
+               const dateTimeStart = new Date(dateTimeEnd);
+               dateTimeStart.setHours(dateTimeEnd.getHours() - 5);
 
-               console.log("Hora:", this.agent.parameters.Hora);
-               console.log("Data:", this.agent.parameters.Data);
-               console.log("Start:", dateTimeStart);
-               console.log("End:", dateTimeEnd);
+               const appointmentTimeString = `${dateTimeStart.getDate()} de ${dateTimeStart.toLocaleString('pt-BR', { month: 'long' })} de ${dateTimeStart.getFullYear()} às ${dateTimeEnd.getHours()}h${dateTimeEnd.getMinutes().toString().padStart(2, '0')}`;
 
-               const response = await createCalendarEvent(dateTimeStart, dateTimeEnd, appointment_type);
+               const contexts = this.agent.contexts;
 
-               this.agent.add(`Deu bom. ${appointmentTimeString} agendado com sucesso!`);
+               contexts.forEach(context => {
+                    console.log(`Contexto: ${context.name}`);
+                    console.log('Parâmetros:', context.parameters);
+
+                    if (context.parameters.nome) {
+                         nome = context.parameters.nome[0];
+                    }
+               });
+
+               await createCalendarEvent(dateTimeStart, dateTimeEnd, appointment_type);
+
+               this.agent.add(`Agendado com sucesso! Para dia ${appointmentTimeString}`);
           } catch (error) {
-               console.log("DEU RUIM", error);
-               this.agent.add('Erro ao agendar o compromisso.');
+               if (error.message && error.message.includes('Já existe um evento no horário solicitado')) {
+                    this.agent.add(`Erro ao agendar o compromisso. Detalhes: ${error.message}.`);
+               } else {
+                    this.agent.add('Erro ao agendar o compromisso.');
+               }
                console.error(error);
           }
      }
@@ -77,7 +84,7 @@ function createCalendarEvent(dateTimeStart, dateTimeEnd, appointment_type) {
                          auth: serviceAccountAuth,
                          calendarId: process.env.GOOGLE_CALENDAR_ID,
                          resource: {
-                              summary: `${appointment_type}`,
+                              summary: `${appointment_type}${nome ? ' - ' + nome : ''}`,
                               start: { dateTime: dateTimeStart },
                               end: { dateTime: dateTimeEnd }
                          }
