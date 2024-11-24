@@ -47,9 +47,6 @@ class DialogflowWebhook {
                const contexts = this.agent.contexts;
 
                contexts.forEach(context => {
-                    console.log(`Contexto: ${context.name}`);
-                    console.log('Parâmetros:', context.parameters);
-
                     if (context.parameters.nome) {
                          nome = context.parameters.nome[0];
                     }
@@ -58,9 +55,25 @@ class DialogflowWebhook {
                await createCalendarEvent(dateTimeStart, dateTimeEnd, appointment_type);
 
                this.agent.add(`Agendado com sucesso! Para dia ${appointmentTimeString}`);
+               this.agent.add(`Agradecemos o contato ${nome}, e desejamos um ótimo dia!
+                              Qualquer coisa inicie novamente a conversa com um Oi.`);
           } catch (error) {
                if (error.message && error.message.includes('Já existe um evento no horário solicitado')) {
                     this.agent.add(`Erro ao agendar o compromisso. Detalhes: ${error.message}.`);
+                    const payloadJson = {
+                         "richContent": [
+                             [
+                                 {
+                                     "type": "info",
+                                     "subtitle": "clique aqui!",
+                                     "title": "Acesse para selecionar um horário não conflitante",
+                                     "actionLink": "https://www.google.com/calendar/embed?src=0b0a914a967a30a8e408d3a50af47beb3baf2439e321b0a6dffba12cb7a56c4c@group.calendar.google.com&ctz=America/Sao_Paulo"
+                                 }
+                             ]
+                         ]
+                     };
+                     this.agent.add(new Payload(this.agent.UNSPECIFIED, payloadJson, { sendAsMessage: true, rawPayload: true }));
+                     this.agent.add('Digite agendar novamente para agendarmos');
                } else {
                     this.agent.add('Erro ao agendar o compromisso.');
                }
